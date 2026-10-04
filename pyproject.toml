@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "torrent-convertor"
+dynamic = ["version"]
+description = "Download a torrent (.torrent file, magnet link or URL) and pack its contents into a ZIP file."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["libtorrent>=2.0"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Environment :: Console",
+    "Environment :: X11 Applications :: Tk",
+    "Topic :: Communications :: File Sharing",
+    "Topic :: System :: Archiving :: Compression",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7", "pytest-timeout>=2"]
+
+[project.scripts]
+torrent-convertor = "torrent_convertor.cli:main"
+
+[project.gui-scripts]
+torrent-convertor-gui = "torrent_convertor.gui:main"
+
+[tool.setuptools]
+packages = ["torrent_convertor"]
+
+[tool.setuptools.dynamic]
+version = { attr = "torrent_convertor.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+timeout = 120
