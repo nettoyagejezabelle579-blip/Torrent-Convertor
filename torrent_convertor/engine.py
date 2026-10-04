@@ -280,15 +280,18 @@ class Download:
         _emit(on_progress, Progress(Stage.DOWNLOADING, status.name, total, total))
 
     def finish(self) -> None:
-        """Stop transferring and make sure everything downloaded is written to disk."""
+        """Stop transferring and wait until everything downloaded is written to disk.
+
+        A piece counts as downloaded once its hash is verified, which can happen before
+        libtorrent has finished writing it. libtorrent sends torrent_paused_alert only
+        after all disk I/O of the paused torrent is complete and its files are closed.
+        """
         self._handle.pause()
-        self._handle.save_resume_data(lt.torrent_handle.flush_disk_cache)
         alert = self._session.wait_for_alert(
-            (lt.save_resume_data_alert, lt.save_resume_data_failed_alert),
-            lambda a: a.handle == self._handle,
+            (lt.torrent_paused_alert,), lambda a: a.handle == self._handle
         )
-        if not isinstance(alert, lt.save_resume_data_alert):
-            log.debug("libtorrent did not confirm that its disk cache was flushed")
+        if alert is None:
+            raise DownloadError("libtorrent did not finish writing the downloaded files to disk.")
 
     def remove(self, delete_files: bool = False) -> None:
         """Remove the torrent from the session, optionally deleting its downloaded files."""

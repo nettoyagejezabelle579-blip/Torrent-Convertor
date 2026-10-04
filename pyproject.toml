@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=7"]
+test = ["pytest>=7", "pytest-timeout>=2"]
 
 [project.scripts]
 torrent-convertor = "torrent_convertor.cli:main"
@@ -35,3 +35,4 @@ version = { attr = "torrent_convertor.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+timeout = 120

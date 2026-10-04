@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import threading
 import zipfile
 
@@ -14,15 +15,21 @@ from torrent_convertor.progress import Stage
 from .conftest import SAMPLE_FILES
 
 
+def digest(data: bytes) -> str:
+    # Compare hashes, not the data: a failing comparison of large byte strings makes
+    # pytest spend minutes computing a diff.
+    return hashlib.sha256(data).hexdigest()
+
+
 def zip_contents(path):
     with zipfile.ZipFile(path) as archive:
         assert archive.testzip() is None
-        return {info.filename: archive.read(info) for info in archive.infolist()}
+        return {info.filename: digest(archive.read(info)) for info in archive.infolist()}
 
 
 def expected(*names):
     names = names or SAMPLE_FILES
-    return {f"MyData/{name}": SAMPLE_FILES[name] for name in names}
+    return {f"MyData/{name}": digest(SAMPLE_FILES[name]) for name in names}
 
 
 def test_torrent_file_to_zip(session, seeder, torrent_file, output_dir):
@@ -93,7 +100,7 @@ def test_keep_files(session, seeder, torrent_file, output_dir):
     )
     assert zip_contents(zip_path) == expected()
     for name, data in SAMPLE_FILES.items():
-        assert (output_dir / "MyData" / name).read_bytes() == data
+        assert digest((output_dir / "MyData" / name).read_bytes()) == digest(data)
 
 
 def test_custom_download_dir_keeps_files(session, seeder, torrent_file, output_dir, tmp_path):
@@ -105,7 +112,7 @@ def test_custom_download_dir_keeps_files(session, seeder, torrent_file, output_d
     )
     assert zip_contents(zip_path) == expected()
     for name, data in SAMPLE_FILES.items():
-        assert (download_dir / "MyData" / name).read_bytes() == data
+        assert digest((download_dir / "MyData" / name).read_bytes()) == digest(data)
     assert sorted(p.name for p in output_dir.iterdir()) == ["MyData.zip"]
 
 
@@ -122,7 +129,7 @@ def test_files_already_on_disk_are_zipped_without_peers(
     )
     assert zip_contents(zip_path) == expected()
     for name, data in SAMPLE_FILES.items():
-        assert (content_dir / name).read_bytes() == data
+        assert digest((content_dir / name).read_bytes()) == digest(data)
 
 
 def test_zip_name_does_not_overwrite(session, seeder, torrent_file, output_dir):

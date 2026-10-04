@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import threading
 import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import BinaryIO, Optional, Sequence
 
 from .errors import ArchiveError, Cancelled
 from .progress import Progress, ProgressCallback, Stage
@@ -78,21 +79,20 @@ def create_zip(
             for entry in entries:
                 if cancel is not None and cancel.is_set():
                     raise Cancelled()
-                info = _zip_info(entry, compression, level)
-                with archive.open(info, "w") as dest:
-                    if entry.size:
-                        with open(entry.source, "rb") as src:
-                            remaining = entry.size
-                            while remaining:
-                                if cancel is not None and cancel.is_set():
-                                    raise Cancelled()
-                                chunk = src.read(min(CHUNK_SIZE, remaining))
-                                if not chunk:
-                                    raise ArchiveError(f"{entry.source} is shorter than expected")
-                                dest.write(chunk)
-                                remaining -= len(chunk)
-                                done += len(chunk)
-                                report()
+                with _open_source(entry) as src:
+                    info = _zip_info(entry, src, compression, level)
+                    with archive.open(info, "w") as dest:
+                        remaining = entry.size
+                        while remaining:
+                            if cancel is not None and cancel.is_set():
+                                raise Cancelled()
+                            chunk = src.read(min(CHUNK_SIZE, remaining))
+                            if not chunk:
+                                raise ArchiveError(f"{entry.source} is shorter than expected")
+                            dest.write(chunk)
+                            remaining -= len(chunk)
+                            done += len(chunk)
+                            report()
         os.replace(partial, destination)
     except BaseException as exc:
         try:
@@ -106,22 +106,37 @@ def create_zip(
     return destination
 
 
-def _zip_info(entry: ZipEntry, compression: str, level: Optional[int]) -> zipfile.ZipInfo:
+def _open_source(entry: ZipEntry):
     try:
-        actual_size = entry.source.stat().st_size
+        return open(entry.source, "rb")
     except FileNotFoundError:
         if entry.size:
             raise ArchiveError(f"Downloaded file is missing: {entry.source}") from None
         # libtorrent does not always create empty files; they need no data anyway.
+        return contextlib.nullcontext()
+
+
+def _zip_info(
+    entry: ZipEntry, src: Optional[BinaryIO], compression: str, level: Optional[int]
+) -> zipfile.ZipInfo:
+    if src is None:
         info = zipfile.ZipInfo(entry.arcname, time.localtime()[:6])
         info.external_attr = 0o644 << 16
     else:
-        if actual_size != entry.size:
+        # fstat on our own handle: on Windows, os.stat() of a path can report an
+        # outdated size for a file that was just written by another program.
+        st = os.fstat(src.fileno())
+        if st.st_size != entry.size:
             raise ArchiveError(
                 f"Downloaded file is incomplete: {entry.source} "
-                f"({actual_size} of {entry.size} bytes)"
+                f"({st.st_size} of {entry.size} bytes)"
             )
-        info = zipfile.ZipInfo.from_file(entry.source, entry.arcname, strict_timestamps=False)
+        modified = time.localtime(st.st_mtime)[:6]
+        if modified[0] < 1980:  # the earliest date a zip file can store
+            modified = (1980, 1, 1, 0, 0, 0)
+        info = zipfile.ZipInfo(entry.arcname, modified)
+        info.external_attr = (st.st_mode & 0xFFFF) << 16
+        info.file_size = st.st_size  # lets zipfile decide whether ZIP64 is needed
 
     method = COMPRESSION_METHODS[compression]
     if compression == "auto" and _is_compressed_format(entry.arcname):
