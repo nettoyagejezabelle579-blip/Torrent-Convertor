@@ -240,6 +240,8 @@ class App:
                     on_progress=lambda p: self.events.put(("progress", p)),
                     cancel=self.cancel,
                 )
+                # Report before the session shuts down, which can take a moment.
+                self.events.put(("done", zip_path))
         except Cancelled:
             self.events.put(("cancelled", None))
         except (ConvertorError, OSError) as exc:
@@ -247,8 +249,6 @@ class App:
         except Exception as exc:  # report anything unexpected instead of failing silently
             log.debug("Unexpected error", exc_info=True)
             self.events.put(("error", f"Unexpected error: {exc!r}"))
-        else:
-            self.events.put(("done", zip_path))
 
     def _poll_events(self) -> None:
         latest: Optional[Progress] = None

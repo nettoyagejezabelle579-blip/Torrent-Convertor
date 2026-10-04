@@ -12,9 +12,11 @@ discovery, UPnP/NAT-PMP port forwarding, encryption and uTP.
 - Shows live progress, speed, peers and time remaining
 - Lets you pick which files to download (`--include "*.mkv"`, `--exclude "*sample*"`)
 - Resumes interrupted downloads. Run the same conversion again and it continues where it stopped.
-- Smart compression: text and documents get compressed. Videos, music, images and
-  archives are stored as they are, since they are already compressed and
-  re-compressing them only wastes time.
+- Fast by default: it connects to peers over TCP, which was several times faster than
+  uTP in our tests. Text and documents are compressed with a fast setting. Videos,
+  music, images, archives and any other file that doesn't shrink are stored as they
+  are, since re-compressing them only wastes time. Use `--compression deflate` for a
+  smaller (but slower) zip.
 - Never overwrites an existing zip (`Name.zip` becomes `Name (1).zip`), and never
   leaves a half-written zip behind.
 - Cleans up after itself: only the zip is left at the end (unless you ask to keep the
@@ -81,7 +83,7 @@ already downloaded is kept, and running the same command again resumes from ther
 | `--list` | Only list the torrent's files |
 | `-i, --include PATTERN` | Only download matching files (repeatable) |
 | `-x, --exclude PATTERN` | Skip matching files (repeatable) |
-| `-c, --compression` | `auto` (default), `deflate`, `store`, `bzip2` or `lzma` |
+| `-c, --compression` | `auto` (default, fast), `deflate` (smaller), `store`, `bzip2` or `lzma` |
 | `--level 0-9` | Compression level for deflate/bzip2 |
 | `--port N` | Port for incoming connections (default 6881, `0` = random) |
 | `--max-download`, `--max-upload` | Speed limits in KiB/s |

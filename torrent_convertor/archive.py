@@ -7,6 +7,7 @@ import os
 import threading
 import time
 import zipfile
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Optional, Sequence
@@ -35,6 +36,16 @@ ALREADY_COMPRESSED = frozenset(
 
 CHUNK_SIZE = 1024 * 1024
 REPORT_INTERVAL = 0.2  # seconds between progress reports
+
+# "auto" favours speed: deflate level 1 is about 3x faster than zlib's default level 6
+# and the zip is only about 20% bigger. Use "deflate" for the smallest zip.
+AUTO_LEVEL = 1
+# In "auto" mode, files of unknown type are test-compressed at a few places first; if
+# that saves almost nothing (installers, encrypted data, ...), the file is stored.
+SAMPLE_MIN_FILE_SIZE = 1024 * 1024
+SAMPLE_SIZE = 128 * 1024
+SAMPLE_POSITIONS = (0.1, 0.5, 0.9)  # skips headers, which often compress well
+INCOMPRESSIBLE_RATIO = 0.95
 
 
 @dataclass(frozen=True)
@@ -139,14 +150,32 @@ def _zip_info(
         info.file_size = st.st_size  # lets zipfile decide whether ZIP64 is needed
 
     method = COMPRESSION_METHODS[compression]
-    if compression == "auto" and _is_compressed_format(entry.arcname):
-        method = zipfile.ZIP_STORED
+    if compression == "auto":
+        if _is_compressed_format(entry.arcname) or (
+            src is not None and _is_incompressible(src, entry.size)
+        ):
+            method = zipfile.ZIP_STORED
+        elif level is None:
+            level = AUTO_LEVEL
     info.compress_type = method
     if level is not None and method in (zipfile.ZIP_DEFLATED, zipfile.ZIP_BZIP2):
         # ZipFile.open() ignores the archive-wide level for ZipInfo objects.
         # (Python 3.13 renamed this to compress_level and kept the old name as an alias.)
         info._compresslevel = level
     return info
+
+
+def _is_incompressible(src: BinaryIO, size: int) -> bool:
+    if size < SAMPLE_MIN_FILE_SIZE:
+        return False  # cheap to compress anyway
+    raw = packed = 0
+    for position in SAMPLE_POSITIONS:
+        src.seek(int(size * position))
+        sample = src.read(SAMPLE_SIZE)
+        raw += len(sample)
+        packed += len(zlib.compress(sample, AUTO_LEVEL))
+    src.seek(0)
+    return packed >= raw * INCOMPRESSIBLE_RATIO
 
 
 def _is_compressed_format(arcname: str) -> bool:

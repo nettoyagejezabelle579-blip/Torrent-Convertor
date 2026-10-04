@@ -98,6 +98,11 @@ class SessionConfig:
             "enable_dht": self.dht,
             "dht_bootstrap_nodes": DHT_BOOTSTRAP_NODES,
             "enable_lsd": self.lsd,
+            # Connect out over TCP: libtorrent's uTP was 3-7x slower in our measurements.
+            # Peers can still connect to us over uTP, so no one becomes unreachable.
+            "enable_outgoing_utp": False,
+            # Don't keep the user waiting at the end for trackers to acknowledge we left.
+            "stop_tracker_timeout": 1,
             "enable_upnp": self.upnp,
             "enable_natpmp": self.upnp,
             "download_rate_limit": self.download_limit,

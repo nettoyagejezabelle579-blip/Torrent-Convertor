@@ -91,8 +91,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--compression",
         choices=COMPRESSIONS,
         default="auto",
-        help="'auto' (default) compresses files, but stores videos, music, images and "
-        "archives as they are because they are already compressed",
+        help="'auto' (default) is fast: it compresses quickly and stores files that "
+        "don't shrink, like videos, images and archives. 'deflate' makes smaller zips",
     )
     archive.add_argument(
         "--level",

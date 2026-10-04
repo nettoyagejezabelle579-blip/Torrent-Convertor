@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import zipfile
 from pathlib import Path
@@ -126,3 +127,27 @@ def test_unique_path(tmp_path):
     assert unique_path(target) == tmp_path / "name (1).zip"
     (tmp_path / "name (1).zip.part").touch()  # another conversion is writing this one
     assert unique_path(target) == tmp_path / "name (2).zip"
+
+
+def test_auto_stores_incompressible_files_of_unknown_type(tmp_path):
+    installer = b"MZ" + b"\0" * 50_000 + os.urandom(2_000_000)
+    random_data = write(tmp_path / "src" / "setup.exe", installer)
+    text = write(tmp_path / "src" / "notes.dat", b"compressible text " * 200_000)
+    small = write(tmp_path / "src" / "small.bin", os.urandom(1000))
+    result = create_zip([random_data, text, small], tmp_path / "out.zip")
+    with zipfile.ZipFile(result) as archive:
+        assert archive.testzip() is None
+        # The compressible header doesn't fool the check: samples skip the start.
+        assert archive.getinfo("src/setup.exe").compress_type == zipfile.ZIP_STORED
+        assert archive.getinfo("src/notes.dat").compress_type == zipfile.ZIP_DEFLATED
+        assert archive.getinfo("src/small.bin").compress_type == zipfile.ZIP_DEFLATED
+        assert archive.read("src/setup.exe") == random_data.source.read_bytes()
+
+
+def test_auto_is_faster_than_maximum_compression(tmp_path):
+    lines = b"".join(b"line %d of the log\n" % i for i in range(300_000))
+    text = write(tmp_path / "src" / "notes.txt", lines)
+    fast = create_zip([text], tmp_path / "fast.zip", compression="auto")
+    small = create_zip([text], tmp_path / "small.zip", compression="deflate", level=9)
+    # auto trades some size for speed, but still compresses a lot.
+    assert small.stat().st_size < fast.stat().st_size < text.size / 3
