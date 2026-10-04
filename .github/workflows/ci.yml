@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.13"]
+        include:
+          - os: ubuntu-latest
+            python: "3.10"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install ".[test]"
+      - run: python -m pytest -v
+
+  build:
+    name: Build app (${{ matrix.os }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install . pyinstaller
+      - name: Build command line tool
+        run: pyinstaller --onefile --name torrent-convertor packaging/torrent_convertor_cli.py
+      - name: Build desktop app
+        run: pyinstaller --onefile --windowed --name "Torrent Convertor" packaging/torrent_convertor_gui.py
+      - name: Check the command line tool runs
+        shell: bash
+        run: ./dist/torrent-convertor --version
+      - name: Package
+        shell: bash
+        run: |
+          mkdir release
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp dist/*.exe release/
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            # Keep the .app bundle and executable permissions intact.
+            tar -czf release/torrent-convertor-macos.tar.gz -C dist "Torrent Convertor.app" torrent-convertor
+          else
+            tar -czf release/torrent-convertor-linux.tar.gz -C dist "Torrent Convertor" torrent-convertor
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: torrent-convertor-${{ runner.os }}
+          path: release/
